@@ -9,155 +9,356 @@
 # Stephen Marsland, 2008, 2014
 
 import numpy as np
+from mlxtend.data import loadlocal_mnist
+import matplotlib.pyplot as plt
 
-class pcn:
-	""" A basic Perceptron"""
+def readData(fname):
+	with open(fname) as f:
+		ncols = len(f.readline().split(','))
+	data = np.loadtxt(fname, dtype=int, delimiter=",", usecols=range(1, ncols))
 	
-	def __init__(self,logical_OR,logical_OR_targets):
-		""" Constructor """
-		# Set up network size
-		if np.ndim(logical_OR)>1:
-			self.nIn = np.shape(logical_OR)[1]
-		else: 
-			self.nIn = 1
+	# normalize the data
+	data = data / 255
 	
-		if np.ndim(logical_OR_targets)>1:
-			self.nOut = np.shape(logical_OR_targets)[1]
-		else:
-			self.nOut = 1
 
-		self.nData = np.shape(logical_OR)[0]
-	
-		# Initialise network
-		self.weights = np.random.rand(self.nIn+1,self.nOut)*0.1-0.02
-		# self.weights = np.empty([self.nIn+1, self.nOut])
-		# self.weights[0] = -0.05
-		# self.weights[1] = -0.02
-		# self.weights[2] = 0.02
+	bais = np.ones([data.shape[0] , 1], dtype=int)
+	# axis = 1 means vertical,   axis = 0 means horizontal
+	data = np.concatenate((bais, data), axis=1)
+	return data
 
+def one_hot_encoded_Targets(target_list, rows):
+	targets = np.zeros([rows, 10])
+	for i in range(target_list.shape[0]):
+		targets[i][target_list[i]] = 1
+	return targets
 
-	def pcntrain(self,inputs,targets,eta,nIterations):
-		""" Train the thing """	
-		# Add the inputs that match the bias node
-		bais = -np.ones([self.nData, 1], dtype=int)
-		# axis = 1 means vertical,   axis = 0 means horizontal
-		inputs = np.concatenate((bais, inputs), axis=1)
-		# Training
-		change = range(self.nData)
+def trainings( epochs,  eta, data, labels, weights, targets, batch):
+	weightsList = []
+	weightsList.append(weights)
+	correctList = []
+	epochList = []
+	correct = 0
+	wrong = 0
+	rows, cols = data.shape
+	for epoch in range(0, epochs):
+		correct = 0
+		for i in range(0, rows):
+			# I need to check one row of data at a time to see if weights need to be updated
+			# subseuent rows of data will fire with the new weights
 
-		for n in range(nIterations):
-			print("Iteration: %d"% n)
-			print(self.weights)
-			self.activations = self.pcnfwd(inputs, targets)
-			print("Inputs: ")
-			print(inputs)
-			print("Final outputs are: ")
-			print(self.activations)
-		
-			# Randomise order of inputs
-			#np.random.shuffle(change)
-			#inputs = inputs[change,:]
-			#inputs_targets = inputs_targets[change,:]
+			#                  [1x785] @ [785x10]
+			activations = np.dot(data[i], weights)
+			tk = labels[i]
+			yk = np.argmax(activations)
+			output = np.where(activations > 0, 1, 0)
 			
-		#return self.weights
-
-	def pcnfwd(self, inputs, targets):
-		""" Run the network forward """
-		activations = np.zeros([self.nData, 1], dtype=int)
-		# Compute activations
-		for k in range(self.nData):
-			# activations =  np.dot(logical_OR[i],self.weights)
-			sotty = np.dot(inputs[k],self.weights)
-			activations[k] = 1 if  sotty > 0 else 0
-			if activations[k] != targets[k]:
-				# yt = np.empty([self.nData,1])
-				yt = np.repeat(activations[k] - targets[k], self.nData)
-				iT = np.transpose(inputs[k])
-				for i in range(self.nIn+1):
-					yt = activations[k][0] - targets[k][0]
-					self.weights[i][0] -= eta * (yt) * inputs[k][i]
-				print("New Weights")
-				print(self.weights)
-
 			
 
-		# Threshold the activations
-		return np.where(activations>0,1,0)
+			# if epoch == 0:
+			# 	if tk == yk:
+			# 		correct +=1
 
+			# else:
+			if tk != yk:
+				print("Activations: ", activations)
+				print("tk = ", tk)
+				print("Perceptron %d fired"%yk)
+				print("Before: ", weights)
+				delta = (targets[tk] - output)  # [1x10]
+				#output_k = output.reshape(10,1)
+				#target_k = targets[tk].reshape(10,1)
+				# data_k = data[i]  # [1x785]
 
-	def confmat(self,logical_OR,logical_OR_targets):
-		"""Confusion matrix"""
+										# [1x785] @ [1x10]
+				delta_w = eta * np.outer(data[i],   delta)   # [785x 10]
+				weights = weights + delta_w
+				wrong += 1
 
-		# Add the logical_OR that match the bias node
-		logical_OR = np.concatenate((logical_OR,-np.ones((self.nData,1))),axis=1)
+				print("AFTER ", weights)
+			else:
+				correct +=1
+		accuracy = correct / data.shape[0] * 100 
+		# print('\n weight and new weight are same: ', np.array_equal(hold_weight, weights))
+		print('\n epoch: %s, accuracy %s' % (epoch, accuracy))
+		correctList.append(accuracy)
+		weightsList.append(weights)
+		epochList.append(epoch)
+		if epoch > 0 and abs(correctList[epoch] - correctList[epoch - 1]) < 0.01:	
+			return (correctList, weights, epochList, weightsList)
+	return (correctList, weights, epochList, weightsList)
+	# return accuracy
+
+def training(epochs, eta, data, labels, w, targets, batch):
+	weightsList = []
+	weightsList.append(w)
+	correctList = []
+	epochList = []
+	correct = 0
+	wrong = 0
+	for epoch in range(0, epochs):
+		print("Epoch:", (epoch + 1), "/", epochs)
+		for i in range(0, data.shape[0]):
+			activations = np.dot(data[i], w)  
+			outputs = np.where(activations > 0, 1, 0)  
+			yk = np.argmax(activations)
+			tk = labels[i]
+
+			w_transpose = w.T
+			if yk == tk:
+				correct += 1
+			else:
+				w_transpose[i] = w_transpose[i] + (eta *  (targets[i] - outputs) * data[i])
+				wrong += 1
+		percent = correct / batch * 100
 		
-		outputs = np.dot(logical_OR,self.weights)
+		print("accuracy: %s \n" % str(percent))
+		correctList.append(percent)
+		weightsList.append(w)
+		epochList.append(epoch)
+	return (correctList, w, epochList, weightsList)
+
+
+
+def train(epochs, eta, data, label, w, targets, batch):
+	for epoch in range(0, epochs):
+		correct = 0
+		
+		print("Epoch: {epoch} / {epochs}")
+		i = 0
+		for data_k in data:
+			activations = np.dot(data_k, w)
+			#threshold/activation function
+			outputs = np.where(activations > 0, 1, 0)
+			yk = np.argmax(activations)
+			tk = label[i]
+			# print("t^k = %d" % label[i])
+			# print(targets[label[i]])
+			# print("y = ")
+			# print(activations)
+			# print("yk = %s" % str(yk))
+			
+			# print("y = %s" % str(outputs))
+
+			if yk != tk:
+				# print('weights: ', w[:, yk])
+				# delta_w = .01 * (tk-yk)* data[i]
+				for row in range(0, w.shape[1]):
+					for col in range(0, w.shape[0]):
+						w[row][col] = w[row][col] +  eta * (targets[row] - outputs[row])* data[i][col]
+					# w[:, yk] = w[:, yk] + delta_w
+				# print('weights: ', w[:, yk])
+			else:
+				correct += 1
+				
+			
+			i += 1
+		print("accuracy = %s \n" % str(correct/data.shape[0]))
+	print("this is the end of the epoch")
+
+
+
+
+def test(epochs, data, weightList, targets, batch):
+	correctList = []
+	correct = 0
+	for epoch in range(0, epochs):
+		correct = 0
+		activations = np.dot(data, weightList[epoch])
+		output = np.where(activations > 0, 1, 0)
+		
+		for i in range(0, data.shape[0]):
+			# expected = targets[i]
+			# out = np.argmax(activations[i])
+		
+			if targets[i] == np.argmax(activations[i]):
+				correct += 1
 	
-		nClasses = np.shape(logical_OR_targets)[1]
+		accuracy = (correct / data.shape[0]) * 100 
+		correctList.append(accuracy)
+	return correctList
 
-		if nClasses==1:
-			nClasses = 2
-			outputs = np.where(outputs>0,1,0)
-		else:
-			# 1-of-N encoding
-			outputs = np.argmax(outputs,1)
-			logical_OR_targets = np.argmax(logical_OR_targets,1)
 
-		cm = np.zeros((nClasses,nClasses))
-		for i in range(nClasses):
-			for j in range(nClasses):
-				cm[i,j] = np.sum(np.where(outputs==i,1,0)*np.where(logical_OR_targets==j,1,0))
 
-		print(cm)
-		print(np.trace(cm)/np.sum(cm))
+# helper function that graphs accuracy per epoch for both training
+# and testing data
+def accuracyGraph(correctList, epochList, testCorrect):
+	plt.title("Accuracy Graph")
+	plt.xlabel("Epochs")
+	plt.ylabel("Accuracy (%)")
+	plt.axis([0, len(epochList), 0, 100])
+
+	
+	plt.plot(epochList, correctList, label="Training")
+	plt.plot(epochList, testCorrect, label="Test")
+	plt.legend()
+	plt.show()
+	plt.savefig("plotfile.png")
+
+
+# helper function that computes the confusion matrix for the testing
+# data using the latest (most accurate) weights
+# confMat(test_data, test_labels, final_weights, epochs, batch, eta)
+def confMat(data, targets, weights, epochs, batch, learning):
+	# create conf matrix
+	target_cols = len(targets)
+	conf = np.zeros([10, 10], dtype=int)
+	corr = 0
+
+	# for i in range(10):
+	# 	conf[0, i + 1] = i
+	# 	conf[i + 1, 0] = i
 		
-def logic():
-	import pcn
-	""" Run AND and XOR logic functions"""
+	data_rows, data_cols = data.shape
+	activations = np.dot(data, weights)
+	output = np.where(activations > 0, 1, 0)
 
-	logical_AND = np.array([[1,1,1],
-							[1,0,0],
-				  			[0,1,0],
-				  			[0,0,0]])
-	logical_XOR = np.array([[1,1,0],
-				  			[1,0,1],
-				  			[0,1,1],
-					   		[0,0,0]])
-	logical_NOT = np.array([[1,0],
-							[0,1]])
+	for i in range(0, data_rows):
+		expected = targets[i]
+		out = np.argmax(output[i])
 
-	p = pcn.pcn(logical_AND[:,0:2],logical_AND[:,2:])
-	p.pcntrain(logical_AND[:,0:2],logical_AND[:,2:],0.25,10)
-	p.confmat(logical_AND[:,0:2],logical_AND[:,2:])
+		if expected == out:
+			corr += 1
 
-	q = pcn.pcn(logical_XOR[:,0:2],logical_XOR[:,2:])
-	q.pcntrain(logical_XOR[:,0:2],logical_XOR[:,2:],0.25,10)
-	q.confmat(logical_XOR[:,0:2],logical_XOR[:,2:])
+		conf[expected, out] += 1
+
+	print(conf)
+	print("Accuracy:", (corr / data_rows) * 100, "%")
+	print("Leraning rate:", learning)
+	print("Epochs:", epochs)
+	print("Batch size:", batch)
+
+	np.savetxt("confusion matrix.csv", conf, delimiter=',')
+
+def trainingz(data, labels, targets, weights, eta, epoch):
+    for current_epoch in range(0, epoch):
+        accuracy = 0
+        for i in range(0, len(data)):
+            tk = labels[i]
+            activation = np.dot(data[i], weights)
+            yk = np.argmax(activation)
+            output = np.where(activation > 0, 1, 0)
+            if current_epoch == 0:
+                if tk == yk:
+                    accuracy +=1
+
+            else:
+                if tk != yk:
+                    delta = (targets[tk] - output).reshape(10,1)
+                    #output_k = output.reshape(10,1)
+                    #target_k = targets[tk].reshape(10,1)
+                    data_k = data[i].reshape(1, 785)
+                    delta_w = eta * np.dot(delta, data_k)
+                    weights = np.add(weights, delta_w.T)
+                else:
+                    accuracy +=1
+
+        # print('\n weight and new weight are same: ', np.array_equal(hold_weight, weights))
+        print('\n epoch: %s, accuracy %s' % (current_epoch, accuracy/data.shape[0]))
+    return accuracy
+
+def read_data_normalize_and_add_bias(classes, features):
+	
+	data, labels = loadlocal_mnist(
+		images_path=features, 
+		labels_path=classes)
+	rows, cols = data.shape
+
+	# normalize
+	data = data / 255
+	
+	# make a bias for every row
+	bais = np.ones([rows , 1], dtype=float)
+
+	# prepend the bias to the data
+	# axis = 1 means vertical,   axis = 0 means horizontal
+	data = np.concatenate((bais, data), axis=1)
+
+	# return the data and the bias
+	return data, labels
 
 
-logical_OR = np.array([ [0,0],
-					[0,1],
-					[1,0],
-					[1,1]])
-logical_OR_targets = np.array([[0],
-					[1],
-					[1],
-					[1]])
+def main():
+	epochs = 70
+	eta = .1
+	batch = 1
+	
+	# train_file = "mnist_train.csv"
+	# test_file  = "mnist_test.csv"
 
-logical_NOT = np.array([ [1],
-						 [0]])
-logical_NOT_targets = np.array([[0],
-								[1]])
+	train_data_file = 'data/train-images.idx3-ubyte'
+	train_label_file = 'data/train-labels.idx1-ubyte'
 
-eta = 0.25
-T = 6
-# print("Created Perceptron")
-# p = pcn(logical_OR, logical_OR_targets)
-# print("Starting the training")
-# p.pcntrain(logical_OR, logical_OR_targets, eta, T)		
-print("NOT")		
-print("Created Perceptron")
-p = pcn(logical_NOT, logical_NOT_targets)
-print("Starting the training")
-p.pcntrain(logical_NOT, logical_NOT_targets, eta, T)	
-print("NOT")		
+
+	train_data, train_label = read_data_normalize_and_add_bias(train_label_file, train_data_file)
+
+	
+	rows, cols = train_data.shape
+	# print('Training\nDimensions: %s x %s' % (rows, cols))
+	# print('\n1st row', train_data[0])
+
+	
+	# we need 10 sets of weigts, one for each digit we want to id
+	weights = np.random.default_rng().uniform(-0.05, 0.05, [cols, 10])
+	for i in range(cols):
+		weights[i] = [-0.008273979447639121, -0.018066262830690627, -0.017009612515183792, -0.026791061367860403, 0.01926989680582465, -0.011686243205535941, 0.0015042996616475152, 0.048184713508116275, -0.04348513962852357, 0.022143747122333163]
+
+	# when identifies digit 0 we get the zeroth row and one-hot matrix
+	targets = np.identity(10, dtype=int)
+	
+	# targets = np.identity(10, dtype=float)
+	# alternative
+	# targets = one_hot_encoded_Targets(train_label, rows)
+	# targets = np.zeros([rows, 10])
+	# targets[train_label] = 1;
+
+	#adjust weights to match target
+	# train(epochs, eta, train_data, train_label, weights, targets, batch)
+	# tup = training(epochs, eta, train_data, train_label, weights, targets, batch)
+
+	tup = trainings(epochs, eta, train_data, train_label, weights, targets, batch)
+	# tup = trainingz(train_data, train_label, targets, weights, eta, epochs)
+
+
+	train_accuracy_list = tup[0]
+	final_weights = tup[1]
+	trained_epochs = tup[2]
+	all_trained_Weight_sets = tup[3]
+	epochs = len(trained_epochs)
+
+
+	test_data_file   = 'data/t10k-images.idx3-ubyte'
+	test_labels_file = 'data/t10k-labels.idx1-ubyte'
+	
+	test_data, test_labels = read_data_normalize_and_add_bias(test_labels_file, test_data_file)
+	rows, cols = test_data.shape
+
+	# test_labels = one_hot_encoded_Targets(tt, rows)
+		
+	print('Dimensions: %s x %s' % (rows, cols))
+  	# print('\n1st row', pret_data[0])
+	
+	# gets correct % prediction for each epoch (list)
+	testCorrect = test(epochs, test_data, all_trained_Weight_sets, test_labels, batch)
+
+	# prints accuracy graph for training and test data
+	accuracyGraph(train_accuracy_list, trained_epochs , testCorrect)
+
+	# printf confusion matrix for the test data
+	confMat(test_data, test_labels, final_weights, epochs, batch, eta)
+
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+
+	# if __name__ == "__main__":
+    # targets = np.identity(10, dtype=float)
+    # # weights = np.random.uniform(-.05, .05, (data.shape[1], targets.shape[0]))
+    # train_data, train_labels = load_normalize('/home/zeilo/Documents/machine_learning/hw_1/train-images.idx3-ubyte','/home/zeilo/Documents/machine_learning/hw_1/train-labels.idx1-ubyte')
+    # weights = np.array(np.random.uniform(-.05, .05, (train_data.shape[1], targets.shape[0])), dtype='f')
+    # eta = .1
+    # epoch = 10
+    # accuracy = training(train_data, train_labels, targets, weights, eta, epoch)
