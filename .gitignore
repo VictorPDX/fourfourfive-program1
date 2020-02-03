@@ -3,3 +3,5 @@ Perceptron.py
 *.csv
 Eta_0.1_Accuracy_Plot.png
 *.txt
+PerceptronTwo.py
+neural-network.py
