@@ -187,13 +187,24 @@ def error_function(layer, delta_k, delta_j, output_units, hidden_units, outputs,
 
 	return delta_k, delta_j
 
-def update_hidden_weights(eta, delta_k, hidden_activations, alpha, delta_w_T):
+def update_hidden_weights(eta, delta_k, hidden_activations, alpha, delta_W_kj):
 	# alpha is momentum
-	first = eta * delta_k * hidden_activations
-	second = alpha * delta_w_T
-	delta_w_T = first + second
+	noh = eta * delta_k * hidden_activations
+	momentum = alpha * delta_W_kj
+
+	# momentum should t-1 so new delta_W_ji should be one index greater
+	delta_W_kj = noh + momentum
 	
-	return delta_w_T
+	return delta_W_kj
+
+def update_input_weights(eta, delta_j, inputs, alpha, delta_W_ji):
+	nox = eta * delta_j * inputs
+	momentum = alpha * delta_W_ji
+
+	# momentum should t-1 so new delta_W_ji should be one index greater
+	delta_W_ji = nox + momentum
+
+	return delta_W_ji
 
 
 
@@ -245,13 +256,17 @@ def main():
 	targets = np.identity(10, dtype=int)
 	targets = np.where(targets > 0, 0.9, 0.1)
 
+	input_units = train_data.shape[0]
 
 	train_accuracy_list = []
 	test_accuracy_list  = []
 	hidden_layers = np.zeros([layers], dtype=float)
-	delta_w_T = np.zeros([output_units, hidden_units+1])
+	delta_W_kj = np.zeros([output_units, hidden_units+1])
+	delta_W_ji = np.zeros([hidden_units, input_units+1])
 	delta_k   = np.zeros([1, output_units+1])
 	delta_j   = np.zeros([layers, hidden_units+1])
+
+	# what is this used for?
 	delta_W   =np.zeros([])
 
 	for epoch in range(epochs):
@@ -262,12 +277,20 @@ def main():
 			
 			
 			targets = train_label[layer]
+			
+			# back propagate
 			if output_activations[0] != targets[0]:
-				# back propagate
+				# calculate the error
 				delta_k, delta_j[layer] = error_function(layer, delta_k, delta_j, output_units, hidden_units, output_activations, output_weights, targets, hidden_activations)
-				delta_w_T[layer] =  update_hidden_weights(eta, delta_k, hidden_activations, alpha, delta_w_T)
-				output_weights = output_weights.T + delta_w_T
-				update_input_weights()
+				
+				# update the hidden-to-output weights
+				delta_W_kj[layer] =  update_hidden_weights(eta, delta_k, hidden_activations, alpha, delta_W_kj)
+				output_weights = output_weights.T + delta_W_kj
+				
+				# update the input-to-hidden weights
+				delta_W_ji[layer] =  update_input_weights(eta, delta_j, train_data, alpha, delta_W_ji)
+				hidden_weights = hidden_weights + delta_W_ji
+
 				print("Need to do")
 
 
