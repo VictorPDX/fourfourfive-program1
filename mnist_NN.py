@@ -1,12 +1,86 @@
 #!/usr/bin/env python3
 
+import sys
+
+print(sys.version)
 
 import numpy as np
 from mlxtend.data import loadlocal_mnist
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 import time
 import math
 import sys
+
+
+class two_layer_nueral_net():
+
+	def __init__(self, train_data, training_labels, test_data, test_labels, hidden_units=20, output_units=10, alpha=0.9, epochs=20, eta=0.1):
+		self.n = eta
+		self.y = []    
+		self.momentum = alpha
+
+		self.train_data = train_data
+
+		self.input_units = train_data.shape[1]
+		self.hidden_units = hidden_units
+		self.output_units = output_units
+
+		self.test_rows, self.test_cols = test_data.shape
+		self.train_rows, self.train_cols = train_data.shape
+		
+		self.train_inputs = self.train_rows
+		self.train_labels = self.train_cols
+		self.test_inputs = self.test_rows
+		self.test_labels = self.test_cols
+
+		np.random.seed(1)
+		self.hidden_weights = np.random.randint(-5, 5, [hidden_units, self.input_units]) / 100
+		self.output_weights = np.random.randint(-5, 5, [output_units, hidden_units+1]) / 100
+		
+		self.output_error = np.zeros([1, output_units])
+		self.hidden_error = np.zeros([1, hidden_units])
+		
+
+		
+		self.delta_W_kj = np.zeros([self.input_units, output_units, hidden_units+1])
+		self.delta_W_ji = np.zeros([self.input_units, hidden_units, self.input_units])
+		
+	# rinse and repeat
+	def affine_projection(self, x, w):
+		"""Performs an affine projection and activation function (sigmoid function)
+		
+		Arguments:
+			x {np array} -- the training data
+			targets {np array} -- training targets
+			w {np array} -- weights for forward phase
+		
+		Returns:
+			np.array -- returns the hidden layer activations with the bias added to each hidden unit
+		"""
+		# dot product 
+		output = np.dot(x, w.T)
+		# squash it and move on
+		activations = 1 / (1 + np.exp(-output))
+		rows = activations.shape[0]
+		
+		bias = np.ones([rows , 1], dtype=float)
+			
+		# prepend the bias to the data
+		# axis = 1 means vertical,   axis = 0 means horizontal
+		return np.concatenate((bias, activations.reshape([1,rows])), axis=1)
+		
+	def output_activation(self, x, w):
+		# dot product 
+		output = np.dot(x, w.T)
+		# squash it and move on
+		output_activation = 1 / (1 + np.exp(-output))
+		return output_activation
+
+	def forward_phase(self, t, data):
+		hidden_activations = self.affine_projection(data[t-1], self.hidden_weights)
+		output_activations = self.output_activation(hidden_activations, self.output_weights)
+		return output_activations
+
 
 
 def one_hot_encoded_Targets(target_list, rows):
@@ -131,14 +205,14 @@ def read_data_normalize_and_add_bias(classes, features):
 	rows = data.shape[0]
 
 	# normalize
-	data = data / 255
+	data = add_bias(data / 255, rows)
 	
-	# make a bias for every row
-	bais = np.ones([rows , 1], dtype=float)
+	# # make a bias for every row
+	# bais = np.ones([rows , 1], dtype=float)
 
-	# prepend the bias to the data
-	# axis = 1 means vertical,   axis = 0 means horizontal
-	data = np.concatenate((bais, data), axis=1)
+	# # prepend the bias to the data
+	# # axis = 1 means vertical,   axis = 0 means horizontal
+	# data = np.concatenate((bais, data), axis=1)
 
 	# return the data and the bias
 	return data, labels
@@ -151,76 +225,59 @@ def add_bias(data, rows):
 	# axis = 1 means vertical,   axis = 0 means horizontal
 	return np.concatenate((bias, data), axis=1)
 
-# rinse and repeat
-def affine_projection(x, w):
-	"""Performs an affine projection and activation function (sigmoid function)
-	
+
+def error_function(output_error, hidden_error, output_units, hidden_units, outputs, w_kj, targets, h_activations):
+	"""[summary]
+
 	Arguments:
-		x {np array} -- the training data
-		targets {np array} -- training targets
-		w {np array} -- weights for forward phase
-	
+		output_error {[type]} -- lowercase delta k
+		hidden_error {[type]} -- lowercase delta j
+		output_units {[type]} -- number of output units (k)
+		hidden_units {[type]} -- number of hidden units (j)
+		outputs {[type]} -- output activations
+		w_kj {[type]} -- hidden to output weights without the bias  for hidden error since j starts at 1
+		targets {[type]} -- labels
+		h_activations {[type]} -- hidden actications
+
 	Returns:
-		np.array -- returns the hidden layer activations with the bias added to each hidden unit
+		[type] -- the output errors and the hidden errors
 	"""
-	# dot product 
-	output = np.dot(x, w.T)
-	# squash it and move on
-	activations = 1 / (1 + np.exp(-output))
-	rows = activations.shape[0]
-	return add_bias(activations.reshape([1,rows]), activations.ndim)
+	output_error = outputs * (1-outputs) * (targets - outputs)
+	hidden_error = h_activations * (1 - h_activations) * np.dot(output_error, w_kj)
 	
-def output_activation(x, w):
-	# dot product 
-	output = np.dot(x, w.T)
-	# squash it and move on
-	activation = 1 / (1 + np.exp(-output))
-	return activation[0]
+	#maybe we should add an index 0 for output_error for the error to be at index 1   <-- I like this better
+	# or remove index 0 from hidden_error for it to be aligned with output_error
 
-def error_function(layer, delta_k, delta_j, output_units, hidden_units, outputs, w_kj, targets, h_activations):
+	return output_error, hidden_error
 
-	delta_k = outputs * (1-outputs) * (targets - outputs)
-	delta_j = h_activations * (1 - h_activations) * np.dot(w_kj, delta_k)
-	
-	#maybe we should add an index 0 for delta_k for the error to be at index 1   <-- I like this better
-	# or remove index 0 from delta_j for it to be aligned with delta_k
-
-	return delta_k, delta_j
-
-def update_hidden_weights(eta, delta_k, hidden_activations, alpha, delta_W_kj, k, t):
+def update_hidden_weights(eta, output_error, hidden_activations, alpha, delta_W_kj, k, t):
 	# alpha is momentum
-	noh = eta * delta_k * hidden_activations
+	noh = eta * (hidden_activations.T @ output_error)
 	momentum = alpha * delta_W_kj[t-1]
 
 	# momentum should t-1 so new delta_W_ji should be one index greater
-	delta_W_kj[t] = noh + momentum
+	delta_W_kj[t] = noh.T + momentum
 	
 	return delta_W_kj
 
-def update_input_weights(eta, delta_j, inputs, alpha, delta_W_ji, hidden_units, j, t):
-	# delta_j should start at 1
-	unit = 1
-	nox  = inputs * delta_j*eta
+def update_input_weights(i, eta, hidden_error, inputs, alpha, delta_W_ji, hidden_units, t):
+	# hidden_error should start at 1
+	nox = eta * (inputs.reshape(inputs.shape[0], 1) @ hidden_error)
 	momentum = alpha * delta_W_ji[t-1]
-	# nox  = inputs[0] * delta_j[unit-1]*eta
-	# momentum = alpha * delta_W_ji[t-1][unit-1]
 
-	# momentum should t-1 so new delta_W_ji should be one index greater
-	delta_W_ji[t][unit-1] = nox + momentum
+	delta_W_ji[t] = nox.T + momentum
 
 	return delta_W_ji
 
 
 
 def main():
-	epochs = 70
-	eta = .2
+	eta = .1
 	batch = 1
-	layers = 2
-	hidden_units = int(sys.argv[1])
-	output_units = 1
 	alpha = 0.9
-
+	epochs = 70
+	output_units = 10
+	hidden_units = int(sys.argv[1])
 	
 	
 	# files
@@ -229,76 +286,75 @@ def main():
 	test_data_file   = 'data/t10k-images.idx3-ubyte'
 	test_labels_file = 'data/t10k-labels.idx1-ubyte'
 	
-	if __debug__:
-		train_data = np.array([[1, 0], [0, 1]], dtype=float)
-		train_label	= np.array([[.9], [-0.3]], dtype=float)
-		
-		train_data = add_bias(train_data, train_data.ndim)
-	else:
-		train_data, train_label = read_data_normalize_and_add_bias(train_label_file, train_data_file)
-		test_data, test_labels = read_data_normalize_and_add_bias(test_labels_file, test_data_file)
+	train_data, train_labels = read_data_normalize_and_add_bias(train_label_file, train_data_file)
+	test_data, test_labels = read_data_normalize_and_add_bias(test_labels_file, test_data_file)
 
 	
-	# test_rows, test_cols = test_data.shape
-	# train_rows, train_cols = train_data.shape
-
-	input_units = train_data.shape[1]
-
-	if __debug__:
-		# for testing purposes only
-		# np.random.seed(1)
-		# weights = np.random.randint(-5, 5, [train_cols, 10])
-		weights = np.ones([hidden_units, input_units])
-		hidden_weights = weights / 10
-		weights = np.ones([output_units,hidden_units+1])
-		output_weights = weights / 10
-	else:
-		# we need 10 sets of weigts, one for each digit we want to id
-		weights = np.random.default_rng().uniform(-0.05, 0.05, [train_cols, 10])
-	
-
 	# when identifies digit 0 we get the zeroth row and one-hot matrix
-	targets = np.identity(10, dtype=int)
+	targets = np.identity(output_units, dtype=float)
 	targets = np.where(targets > 0, 0.9, 0.1)
+	
+
+
+	# train_rows = train_data.shape[0]
+	# input_units = train_data.shape[1]
+	# # if __debug__:
+	# # 	# for testing purposes only
+	# np.random.seed(1)
+	# hidden_weights = np.random.randint(-5, 5, [hidden_units, input_units]) / 100
+	# output_weights = np.random.randint(-5, 5, [output_units,hidden_units+1]) / 100
+	# 	hidden_weights = np.ones([hidden_units, input_units]) / 10
+	# 	output_weights = np.ones([output_units,hidden_units+1]) / 10
+	# else:
+	# 	# we need 10 sets of weigts, one for each digit we want to id
+	# hidden_weights = np.random.default_rng().uniform(-0.05, 0.05, [hidden_units, input_units])
+	# output_weights = np.random.default_rng().uniform(-0.05, 0.05, [output_units,hidden_units+1])
+	
+	nn = two_layer_nueral_net(train_data, train_labels, test_data, test_labels, hidden_units, output_units, alpha, epochs)
 
 
 	train_accuracy_list = []
 	test_accuracy_list  = []
-	hidden_layers = np.zeros([layers], dtype=float)
-	delta_W_kj = np.zeros([input_units, output_units, hidden_units+1])
-	delta_W_ji = np.zeros([input_units, hidden_units, input_units])
-	delta_k   = np.zeros([1, output_units])
-	delta_j   = np.zeros([1, hidden_units])
-
+	
 	# what is this used for?
-	delta_W   =np.zeros([])
-	t = 1
+	# delta_W   =np.zeros([])
+	# j = 1
 	k = 1
-	j = 1
+	correct = 0
 	for epoch in range(epochs):
+
 		start = time.time()
-		for layer in range(layers):
-			hidden_activations = affine_projection(train_data[layer], hidden_weights)
-			output_activations = output_activation(hidden_activations, output_weights)
+		
+		
+		# t is one row of data from the training set
+		for t in range(1, nn.train_rows+1):
+			output_activations = nn.forward_phase(t, nn.train_data[t-1])
+			# hidden_activations = affine_projection(train_data[t-1], hidden_weights)
+			# output_activations = output_activation(hidden_activations, output_weights)
+			prediction = np.argmax(output_activations)
+			# target = train_label[t-1]
+			target = nn.train_labels[t-1]
 			
-			
-			targets = train_label[layer]
-			
+			if prediction == target:
+				correct += 1
 			# back propagate
-			if output_activations[0] != targets[0]:
+			elif epoch > 0 and  prediction != target:
 				# calculate the error
-				w_kj_no_nias = output_weights[0][1:]
-				delta_k, delta_j = error_function(layer, delta_k, delta_j, output_units, hidden_units, output_activations, output_weights[0][1:].reshape(2,1), targets, hidden_activations[0][1:])
+			
+				#                                                                                                                          output weights no bias vertical vector        label       hidden units no bias
+				output_error, hidden_error = nn.error_function(output_error, hidden_error, output_units, hidden_units, output_activations, output_weights[:, 1:], targets[target], hidden_activations[:, 1:])
 				
 				# update the hidden-to-output weights
-				delta_W_kj =  update_hidden_weights(eta, delta_k, hidden_activations, alpha, delta_W_kj, k, t)
-				output_weights = output_weights.T + delta_W_kj[t]
+				delta_W_kj =  update_hidden_weights(eta, output_error, hidden_activations, alpha, delta_W_kj, k, t)
+				output_weights = output_weights + delta_W_kj[t]
 				
-				# update the input-to-hidden weights
-				delta_W_ji =  update_input_weights(eta, delta_j, train_data, alpha, delta_W_ji, hidden_units, j, t)
+				# update the input-to-hidden weights  one input at  a time
+				delta_W_ji =  update_input_weights(input_units, eta, hidden_error, train_data[t-1], alpha, delta_W_ji, hidden_units, t)
 				hidden_weights = hidden_weights + delta_W_ji[t]
 
-				print("Need to do")
+			# get the accuracy for every epoch
+			train_accuracy = correct / train_rows * 100
+			train_accuracy_list.append(train_accuracy)
 
 
 
