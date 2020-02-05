@@ -14,29 +14,30 @@ import sys
 
 class two_layer_nueral_net():
 
-	def __init__(self, train_data, training_labels, test_data, test_labels, hidden_units=20, output_units=10, alpha=0.9, epochs=20, eta=0.1):
-		self.n = eta
+	def __init__(self, training_data_set, training_labels, test_data, test_labels, hidden_units=20, output_units=10, momentum=0.9, epochs=20, eta=0.1):
+		self.eta = eta
 		self.y = []    
-		self.momentum = alpha
+		self.alpha = momentum
 
-		self.train_data = train_data
-
-		self.input_units = train_data.shape[1]
+		self.train_data = training_data_set
+		self.train_labels = training_labels
+		self.input_units = training_data_set.shape[1]
 		self.hidden_units = hidden_units
 		self.output_units = output_units
 
 		self.test_rows, self.test_cols = test_data.shape
-		self.train_rows, self.train_cols = train_data.shape
+		self.train_rows, self.train_cols = training_data_set.shape
 		
-		self.train_inputs = self.train_rows
-		self.train_labels = self.train_cols
-		self.test_inputs = self.test_rows
-		self.test_labels = self.test_cols
+		self.num_train_inputs = self.train_rows
+		self.num_train_labels = self.train_cols
+		self.num_test_inputs = self.test_rows
+		self.num_test_labels = self.test_cols
 
 		np.random.seed(1)
 		self.hidden_weights = np.random.randint(-5, 5, [hidden_units, self.input_units]) / 100
 		self.output_weights = np.random.randint(-5, 5, [output_units, hidden_units+1]) / 100
 		
+		# self.output_activations
 		self.output_error = np.zeros([1, output_units])
 		self.hidden_error = np.zeros([1, hidden_units])
 		
@@ -44,6 +45,9 @@ class two_layer_nueral_net():
 		
 		self.delta_W_kj = np.zeros([self.input_units, output_units, hidden_units+1])
 		self.delta_W_ji = np.zeros([self.input_units, hidden_units, self.input_units])
+
+		self.train_accuracy_list = []
+		self.test_accuracy_list  = []
 		
 	# rinse and repeat
 	def affine_projection(self, x, w):
@@ -67,7 +71,7 @@ class two_layer_nueral_net():
 			
 		# prepend the bias to the data
 		# axis = 1 means vertical,   axis = 0 means horizontal
-		return np.concatenate((bias, activations.reshape([1,rows])), axis=1)
+		return np.concatenate((bias, activations), axis=1)
 		
 	def output_activation(self, x, w):
 		# dot product 
@@ -77,9 +81,128 @@ class two_layer_nueral_net():
 		return output_activation
 
 	def forward_phase(self, t, data):
-		hidden_activations = self.affine_projection(data[t-1], self.hidden_weights)
-		output_activations = self.output_activation(hidden_activations, self.output_weights)
-		return output_activations
+		self.hidden_activations = self.affine_projection(data[t-1], self.hidden_weights)
+		self.output_activations = self.output_activation(self.hidden_activations, self.output_weights)
+		
+
+
+		# output_error, hidden_error = nn.error_function( output_units, hidden_units, output_activations, output_weights[:, 1:], targets[target], hidden_activations[:, 1:])
+
+
+	def error_function(self, targets):
+		"""[summary]
+
+		Arguments:
+			output_error {[type]} -- lowercase delta k
+			hidden_error {[type]} -- lowercase delta j
+			output_units {[type]} -- number of output units (k)
+			hidden_units {[type]} -- number of hidden units (j)
+			outputs {[type]} -- output activations
+			w_kj {[type]} -- hidden to output weights without the bias  for hidden error since j starts at 1
+			targets {[type]} -- labels
+			h_activations {[type]} -- hidden actications
+
+		Returns:
+			[type] -- the output errors and the hidden errors
+		"""
+		self.output_error = self.output_activations * (1-self.output_activations) * (targets - self.output_activations)
+		self.hidden_error = self.hidden_activations[:, 1:] * (1 - self.hidden_activations[:, 1:]) * np.dot(self.output_error, self.output_weights[:, 1:])
+		
+		#maybe we should add an index 0 for output_error for the error to be at index 1   <-- I like this better
+		# or remove index 0 from hidden_error for it to be aligned with output_error
+
+
+	def update_hidden_weights(self, t):
+		# alpha is momentum
+		noh = self.eta * (self.hidden_activations.T @ self.output_error)
+		momentum = self.alpha * self.delta_W_kj[t-1]
+
+		# momentum should t-1 so new delta_W_ji should be one index greater
+		self.delta_W_kj[t] = noh.T + momentum
+		self.output_weights += self.delta_W_kj[t]
+		
+		# return delta_W_kj
+
+				# delta_W_ji =  update_input_weights(input_units, eta, hidden_error, train_data[t-1], alpha, delta_W_ji, hidden_units, t)
+
+	def update_input_weights(self, t):
+		# hidden_error should start at 1
+		nox = self.eta * (self.train_data[t-1].reshape(self.train_data[t-1].shape[0], 1) @ self.hidden_error)
+		momentum = self.alpha * self.delta_W_ji[t-1]
+
+		self.delta_W_ji[t] = nox.T + momentum
+		self.hidden_weights += self.delta_W_ji[t]
+
+		# return delta_W_ji
+
+
+
+	def train(self):
+		
+		
+		# what is this used for?
+		# delta_W   =np.zeros([])
+		# j = 1
+		# k = 1
+		correct = 0
+		for epoch in range(epochs):
+
+			start = time.time()
+			
+			
+			# t is one row of data from the training set
+			for t in range(1, self.train_rows+1):
+				self.forward_phase(t, self.train_data[t-1])
+				# hidden_activations = affine_projection(train_data[t-1], hidden_weights)
+				# output_activations = output_activation(hidden_activations, output_weights)
+				prediction = np.argmax(self.output_activations)
+				# target = train_label[t-1]
+				target = self.train_labels[t-1]
+				
+				if prediction == target:
+					correct += 1
+				# back propagate
+				elif epoch > 0 and  prediction != target:
+					# calculate the error
+					#                                                                                                                          output weights no bias vertical vector        label       hidden units no bias
+					self.error_function(targets[target])
+					self.update_hidden_weights(t)
+					self.update_input_weights(t)
+					# # update the hidden-to-output weights
+					# delta_W_kj =  update_hidden_weights(eta, output_error, hidden_activations, alpha, delta_W_kj, k, t)
+					# output_weights = output_weights + delta_W_kj[t]
+					
+					# # update the input-to-hidden weights  one input at  a time
+					# delta_W_ji =  update_input_weights(input_units, eta, hidden_error, train_data[t-1], alpha, delta_W_ji, hidden_units, t)
+					# hidden_weights = hidden_weights + delta_W_ji[t]
+
+				# get the accuracy for every epoch
+				train_accuracy = correct / self.num_train_inputs * 100
+			self.train_accuracy_list.append(train_accuracy)
+		# return train_accuracy_list
+
+
+
+	def test(self, weights, targets):
+		prediction_list = []
+		correct = 0
+		# num_rows = data.shape[0]
+
+# this should be forward phase!!!!
+		activations = np.dot(self.num_test_inputs, self.hidden_weights)
+		
+		for r in range(self.test_rows):
+			tk = targets[r]
+			yk = np.argmax(activations[r])
+			prediction_list.append(yk)
+			# print("%d) Firing perceptron %d"% (i, yk) )     
+			if tk == yk:
+				correct += 1
+				# print("Correct: %d"% correct)
+		accuracy = (correct / self.test_rows) 
+		
+		return accuracy, prediction_list
+
 
 
 
@@ -135,24 +258,6 @@ def train(epoch, eta, data, labels, weights, targets):
 
 
 
-def test(data, weights, targets):
-	prediction_list = []
-	correct = 0
-	num_rows = data.shape[0]
-
-	activations = np.dot(data, weights)
-	
-	for r in range(0, num_rows):
-		tk = targets[r]
-		yk = np.argmax(activations[r])
-		prediction_list.append(yk)
-		# print("%d) Firing perceptron %d"% (i, yk) )     
-		if tk == yk:
-			correct += 1
-			# print("Correct: %d"% correct)
-	accuracy = (correct / num_rows) 
-	
-	return accuracy, prediction_list
 
 
 
@@ -226,48 +331,8 @@ def add_bias(data, rows):
 	return np.concatenate((bias, data), axis=1)
 
 
-def error_function(output_error, hidden_error, output_units, hidden_units, outputs, w_kj, targets, h_activations):
-	"""[summary]
 
-	Arguments:
-		output_error {[type]} -- lowercase delta k
-		hidden_error {[type]} -- lowercase delta j
-		output_units {[type]} -- number of output units (k)
-		hidden_units {[type]} -- number of hidden units (j)
-		outputs {[type]} -- output activations
-		w_kj {[type]} -- hidden to output weights without the bias  for hidden error since j starts at 1
-		targets {[type]} -- labels
-		h_activations {[type]} -- hidden actications
 
-	Returns:
-		[type] -- the output errors and the hidden errors
-	"""
-	output_error = outputs * (1-outputs) * (targets - outputs)
-	hidden_error = h_activations * (1 - h_activations) * np.dot(output_error, w_kj)
-	
-	#maybe we should add an index 0 for output_error for the error to be at index 1   <-- I like this better
-	# or remove index 0 from hidden_error for it to be aligned with output_error
-
-	return output_error, hidden_error
-
-def update_hidden_weights(eta, output_error, hidden_activations, alpha, delta_W_kj, k, t):
-	# alpha is momentum
-	noh = eta * (hidden_activations.T @ output_error)
-	momentum = alpha * delta_W_kj[t-1]
-
-	# momentum should t-1 so new delta_W_ji should be one index greater
-	delta_W_kj[t] = noh.T + momentum
-	
-	return delta_W_kj
-
-def update_input_weights(i, eta, hidden_error, inputs, alpha, delta_W_ji, hidden_units, t):
-	# hidden_error should start at 1
-	nox = eta * (inputs.reshape(inputs.shape[0], 1) @ hidden_error)
-	momentum = alpha * delta_W_ji[t-1]
-
-	delta_W_ji[t] = nox.T + momentum
-
-	return delta_W_ji
 
 
 
@@ -309,53 +374,23 @@ def main():
 	# 	# we need 10 sets of weigts, one for each digit we want to id
 	# hidden_weights = np.random.default_rng().uniform(-0.05, 0.05, [hidden_units, input_units])
 	# output_weights = np.random.default_rng().uniform(-0.05, 0.05, [output_units,hidden_units+1])
+
+	print("Experiment 1:")
+	epochs = 50
+	hidden_units = 20
+	nn_1_20 = two_layer_nueral_net(train_data, train_labels, test_data, test_labels, hidden_units, output_units, alpha, epochs)
+	nn20.train()
+
+	hidden_units = 50
+	nn_1_50 = two_layer_nueral_net(train_data, train_labels, test_data, test_labels, hidden_units, output_units, alpha, epochs)
+	nn_1_50.train()
+
+	hidden_units = 100
+	nn_1_100 = two_layer_nueral_net(train_data, train_labels, test_data, test_labels, hidden_units, output_units, alpha, epochs)
+	nn_1_100.train()
 	
-	nn = two_layer_nueral_net(train_data, train_labels, test_data, test_labels, hidden_units, output_units, alpha, epochs)
-
-
-	train_accuracy_list = []
-	test_accuracy_list  = []
 	
-	# what is this used for?
-	# delta_W   =np.zeros([])
-	# j = 1
-	k = 1
-	correct = 0
-	for epoch in range(epochs):
-
-		start = time.time()
-		
-		
-		# t is one row of data from the training set
-		for t in range(1, nn.train_rows+1):
-			output_activations = nn.forward_phase(t, nn.train_data[t-1])
-			# hidden_activations = affine_projection(train_data[t-1], hidden_weights)
-			# output_activations = output_activation(hidden_activations, output_weights)
-			prediction = np.argmax(output_activations)
-			# target = train_label[t-1]
-			target = nn.train_labels[t-1]
-			
-			if prediction == target:
-				correct += 1
-			# back propagate
-			elif epoch > 0 and  prediction != target:
-				# calculate the error
-			
-				#                                                                                                                          output weights no bias vertical vector        label       hidden units no bias
-				output_error, hidden_error = nn.error_function(output_error, hidden_error, output_units, hidden_units, output_activations, output_weights[:, 1:], targets[target], hidden_activations[:, 1:])
-				
-				# update the hidden-to-output weights
-				delta_W_kj =  update_hidden_weights(eta, output_error, hidden_activations, alpha, delta_W_kj, k, t)
-				output_weights = output_weights + delta_W_kj[t]
-				
-				# update the input-to-hidden weights  one input at  a time
-				delta_W_ji =  update_input_weights(input_units, eta, hidden_error, train_data[t-1], alpha, delta_W_ji, hidden_units, t)
-				hidden_weights = hidden_weights + delta_W_ji[t]
-
-			# get the accuracy for every epoch
-			train_accuracy = correct / train_rows * 100
-			train_accuracy_list.append(train_accuracy)
-
+	
 
 
 
