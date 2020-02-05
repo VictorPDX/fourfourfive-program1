@@ -164,7 +164,7 @@ def affine_projection(x, w):
 		np.array -- returns the hidden layer activations with the bias added to each hidden unit
 	"""
 	# dot product 
-	output = np.dot(x, w)
+	output = np.dot(x, w.T)
 	# squash it and move on
 	activations = 1 / (1 + np.exp(-output))
 	rows = activations.shape[0]
@@ -172,37 +172,41 @@ def affine_projection(x, w):
 	
 def output_activation(x, w):
 	# dot product 
-	output = np.dot(x, w)
+	output = np.dot(x, w.T)
 	# squash it and move on
 	activation = 1 / (1 + np.exp(-output))
 	return activation[0]
 
 def error_function(layer, delta_k, delta_j, output_units, hidden_units, outputs, w_kj, targets, h_activations):
-	
+
 	delta_k = outputs * (1-outputs) * (targets - outputs)
-	delta_j = h_activations[layer] * (1 - h_activations[layer]) * np.dot(w_kj, delta_k)
+	delta_j = h_activations * (1 - h_activations) * np.dot(w_kj, delta_k)
 	
 	#maybe we should add an index 0 for delta_k for the error to be at index 1   <-- I like this better
 	# or remove index 0 from delta_j for it to be aligned with delta_k
 
 	return delta_k, delta_j
 
-def update_hidden_weights(eta, delta_k, hidden_activations, alpha, delta_W_kj):
+def update_hidden_weights(eta, delta_k, hidden_activations, alpha, delta_W_kj, k, t):
 	# alpha is momentum
 	noh = eta * delta_k * hidden_activations
-	momentum = alpha * delta_W_kj
+	momentum = alpha * delta_W_kj[t-1]
 
 	# momentum should t-1 so new delta_W_ji should be one index greater
-	delta_W_kj = noh + momentum
+	delta_W_kj[t] = noh + momentum
 	
 	return delta_W_kj
 
-def update_input_weights(eta, delta_j, inputs, alpha, delta_W_ji):
-	nox = eta * delta_j * inputs
-	momentum = alpha * delta_W_ji
+def update_input_weights(eta, delta_j, inputs, alpha, delta_W_ji, hidden_units, j, t):
+	# delta_j should start at 1
+	unit = 1
+	nox  = inputs * delta_j*eta
+	momentum = alpha * delta_W_ji[t-1]
+	# nox  = inputs[0] * delta_j[unit-1]*eta
+	# momentum = alpha * delta_W_ji[t-1][unit-1]
 
 	# momentum should t-1 so new delta_W_ji should be one index greater
-	delta_W_ji = nox + momentum
+	delta_W_ji[t][unit-1] = nox + momentum
 
 	return delta_W_ji
 
@@ -238,14 +242,15 @@ def main():
 	# test_rows, test_cols = test_data.shape
 	# train_rows, train_cols = train_data.shape
 
+	input_units = train_data.shape[1]
 
 	if __debug__:
 		# for testing purposes only
 		# np.random.seed(1)
 		# weights = np.random.randint(-5, 5, [train_cols, 10])
-		weights = np.ones([3,2])
+		weights = np.ones([hidden_units, input_units])
 		hidden_weights = weights / 10
-		weights = np.ones([3,1])
+		weights = np.ones([output_units,hidden_units+1])
 		output_weights = weights / 10
 	else:
 		# we need 10 sets of weigts, one for each digit we want to id
@@ -256,19 +261,20 @@ def main():
 	targets = np.identity(10, dtype=int)
 	targets = np.where(targets > 0, 0.9, 0.1)
 
-	input_units = train_data.shape[0]
 
 	train_accuracy_list = []
 	test_accuracy_list  = []
 	hidden_layers = np.zeros([layers], dtype=float)
-	delta_W_kj = np.zeros([output_units, hidden_units+1])
-	delta_W_ji = np.zeros([hidden_units, input_units+1])
-	delta_k   = np.zeros([1, output_units+1])
-	delta_j   = np.zeros([layers, hidden_units+1])
+	delta_W_kj = np.zeros([input_units, output_units, hidden_units+1])
+	delta_W_ji = np.zeros([input_units, hidden_units, input_units])
+	delta_k   = np.zeros([1, output_units])
+	delta_j   = np.zeros([1, hidden_units])
 
 	# what is this used for?
 	delta_W   =np.zeros([])
-
+	t = 1
+	k = 1
+	j = 1
 	for epoch in range(epochs):
 		start = time.time()
 		for layer in range(layers):
@@ -281,15 +287,16 @@ def main():
 			# back propagate
 			if output_activations[0] != targets[0]:
 				# calculate the error
-				delta_k, delta_j[layer] = error_function(layer, delta_k, delta_j, output_units, hidden_units, output_activations, output_weights, targets, hidden_activations)
+				w_kj_no_nias = output_weights[0][1:]
+				delta_k, delta_j = error_function(layer, delta_k, delta_j, output_units, hidden_units, output_activations, output_weights[0][1:].reshape(2,1), targets, hidden_activations[0][1:])
 				
 				# update the hidden-to-output weights
-				delta_W_kj[layer] =  update_hidden_weights(eta, delta_k, hidden_activations, alpha, delta_W_kj)
-				output_weights = output_weights.T + delta_W_kj
+				delta_W_kj =  update_hidden_weights(eta, delta_k, hidden_activations, alpha, delta_W_kj, k, t)
+				output_weights = output_weights.T + delta_W_kj[t]
 				
 				# update the input-to-hidden weights
-				delta_W_ji[layer] =  update_input_weights(eta, delta_j, train_data, alpha, delta_W_ji)
-				hidden_weights = hidden_weights + delta_W_ji
+				delta_W_ji =  update_input_weights(eta, delta_j, train_data, alpha, delta_W_ji, hidden_units, j, t)
+				hidden_weights = hidden_weights + delta_W_ji[t]
 
 				print("Need to do")
 
@@ -326,3 +333,31 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# def backprop(self):
+# 	delta_hidden = np.zeros(np.shape(self.hidden_weights))
+# 	delta_output = np.zeros(np.shape(self.output_weights))
+
+# 	# for i in range(0, self.input.shape[1]):
+# 	output = self.forward(self.input[0])
+# 	output_error, hidden_error = self.error(output, 0)
+# 	# need a 10x21 (if hidden_inputs = 20)
+# 	delta_output = self.eta*(np.dot(self.hidden_inputs.T, output_error)).T + self.momentum * delta_output
+# 	# need a 785 x 20 (exclude the bias from hidden)
+# 	# TODO reshape_input = self.input[0].reshape(785,1)
+# 	reshape_input = self.input[0].reshape(3,1)
+# 	delta_hidden = self.eta*(np.dot(reshape_input, hidden_error[:, 1:])).T + self.momentum * delta_hidden
+
+# 	self.output_weights += delta_output
+# 	self.hidden_weights += delta_hidden
+
+
+# 	  def error(self, output, labelIndex):
+#     # def error(self, output):
+#         t_k = self.labels[labelIndex]
+#         # need [1x 10]
+#         # TODO output_error = output*(1-output)*(self.target[t_k]-output)
+#         output_error = output*(1-output)*(self.target-output)
+#         # need [1 x 21] (if hidden layer = 20)
+#         hidden_error = self.hidden_inputs*(1-self.hidden_inputs)*np.dot(output_error, self.output_weights)
+#         return output_error, hidden_error
