@@ -589,48 +589,6 @@ def main():
 
 
 
-	def shuffle_data(self, data, size):
-		j = 0
-		c = 0
-		for i in range(10):
-			while j < size:
-				if data.train_labels[c] == i:
-					self.train_data[j] = data[j]
-					self.training_labels
-					j += 1
-				c += 1
-
-
-
-
 
 if __name__ == "__main__":
     main()
-
-# def backprop(self):
-# 	delta_hidden = np.zeros(np.shape(self.hidden_weights))
-# 	delta_output = np.zeros(np.shape(self.output_weights))
-
-# 	# for i in range(0, self.input.shape[1]):
-# 	output = self.forward(self.input[0])
-# 	output_error, hidden_error = self.error(output, 0)
-# 	# need a 10x21 (if hidden_inputs = 20)
-# 	delta_output = self.eta*(np.dot(self.hidden_inputs.T, output_error)).T + self.momentum * delta_output
-# 	# need a 785 x 20 (exclude the bias from hidden)
-# 	# TODO reshape_input = self.input[0].reshape(785,1)
-# 	reshape_input = self.input[0].reshape(3,1)
-# 	delta_hidden = self.eta*(np.dot(reshape_input, hidden_error[:, 1:])).T + self.momentum * delta_hidden
-
-# 	self.output_weights += delta_output
-# 	self.hidden_weights += delta_hidden
-
-
-# 	  def error(self, output, labelIndex):
-#     # def error(self, output):
-#         t_k = self.labels[labelIndex]
-#         # need [1x 10]
-#         # TODO output_error = output*(1-output)*(self.target[t_k]-output)
-#         output_error = output*(1-output)*(self.target-output)
-#         # need [1 x 21] (if hidden layer = 20)
-#         hidden_error = self.hidden_inputs*(1-self.hidden_inputs)*np.dot(output_error, self.output_weights)
-#         return output_error, hidden_error
